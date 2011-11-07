@@ -1,0 +1,226 @@
+#!/bin/sh
+
+# define default configuration
+POLL=true
+SMP=auto
+ERL_MAX_PORTS=32000
+ERL_PROCESSES=1000000
+ERL_MAX_ETS_TABLES=1400
+
+# define default environment variables
+NODE=imserver
+HOST=localhost
+ERLANG_NODE=$NODE@$HOST
+ERL=erl
+ETOP=/usr/local/lib/erlang/lib/observer-0.9.8.1/priv/bin/etop
+ROOTDIR=`cd $(dirname $0); pwd`
+LOGS_DIR=$ROOTDIR/log
+WG_DB=$ROOTDIR/var/db/$NODE
+RUNAPP=imserver
+BOOT=" -boot start_sasl"
+START_OTHER=
+COOKIE=$NODE"_foobar"
+
+# parse command line parameters
+ARGS=
+while [ $# -ne 0 ] ; do
+    PARAM=$1
+    shift
+    case $PARAM in
+        --) break ;;
+        --node) ERLANG_NODE=$1; shift ;;
+        --logs) LOGS_DIR=$1 ; shift ;;
+        *) ARGS="$ARGS $PARAM" ;;
+    esac
+done
+
+RUNAPP="$RUNAPP"
+
+NAME=-name
+[ "$ERLANG_NODE" = "${ERLANG_NODE%.*}" ] && NAME=-sname
+
+ERLANG_OPTS="+K $POLL -smp $SMP +P $ERL_PROCESSES -setcookie $COOKIE"
+
+# define additional environment variables
+ROOT_EBIN="$ROOTDIR/ebin deps/*/ebin"
+EBINS="$ROOT_EBIN"
+
+SASL_LOG_PATH=$LOGS_DIR/sasl.log
+DATETIME=`date "+%Y%m%d-%H%M%S"`
+ERL_CRASH_DUMP=$LOGS_DIR/erl_crash_$DATETIME.dump
+#ERL_INETRC=$ROOTDIR/etc/inetrc
+HOME=$ROOTDIR
+
+# export global variables
+export ERL_CRASH_DUMP
+#export ERL_INETRC
+export ERL_MAX_PORTS
+export ERL_MAX_ETS_TABLES
+export HOME
+
+[ -d $WG_DB ] || mkdir -p $WG_DB
+[ -d $LOGS_DIR ] || mkdir -p $LOGS_DIR
+
+# start server
+start ()
+{
+	PID=`ps -ef |grep "$ROOTDIR.*$ERLANG_NODE" | grep -v grep |awk '{print $2}'`
+	if [ $PID ] 
+	then 
+		#echo "Error! The server node has already running!"
+		echo -e "\033[31;49;1m Error! The server node has already running! \033[39;49;0m"
+	else	
+		$ERL \
+			$NAME $ERLANG_NODE \
+			$BOOT \
+			-noinput -detached \
+			-config log \
+			-pa $EBINS \
+			$START_OTHER \
+			-s ${RUNAPP} \
+			$ERLANG_OPTS
+
+			PID2=`ps -ef |grep "$ROOTDIR.*$ERLANG_NODE" | grep -v grep |awk '{print $2}'`
+			if [ $PID2 ] 
+			then 
+				echo "Start start running... pid=$PID2"
+			else
+				echo "Server start failed"
+			fi
+	fi	 	
+}
+
+#stop server
+stop()
+{
+	PID=`ps -ef |grep "$ROOTDIR.*$ERLANG_NODE" | grep -v grep |awk '{print $2}'`
+	if [ $PID ] 
+	then  
+		kill -9 $PID 
+		#echo -e "\033[32;49;1m OK!Server node stopped! pid=$PID \033[39;49;0m"
+		echo "OK!Server node stopped... pid=$PID"
+	else 
+		echo "Server node is not running!"
+	fi
+}
+
+#restart server
+restart()
+{
+	stop
+	start
+}
+
+# attach to server
+debug ()
+{
+    echo "--------------------------------------------------------------------"
+    echo ""
+    echo "IMPORTANT: we will attempt to attach an INTERACTIVE shell"
+    echo "to an already running node."
+    echo "If an ERROR is printed, it means the connection was not succesfull."
+    echo "You can interact with the running node if you know how to use it."
+    echo "Please be extremely cautious with your actions,"
+    echo "and exit immediately if you are not completely sure."
+    echo ""
+    echo "To detach this shell from node, press:"
+    echo "  control+c, control+c"
+    echo ""
+    echo "--------------------------------------------------------------------"
+    echo "$ERL $NAME $ERLANG_NODE -pa $EBINS $BOOT $START_OTHER -s ${RUNAPP} $ERLANG_OPTS $ARGS \"$@\""
+	echo "Press any key to continue"
+    read foo
+    echo ""
+    $ERL \
+      $NAME debug_"$ERLANG_NODE" \
+      -boot start_clean \
+      -remsh $ERLANG_NODE \
+      $ERLANG_OPTS
+}
+
+# start interactive server
+live ()
+{
+    echo "--------------------------------------------------------------------"
+    echo ""
+    echo "IMPORTANT: node is going to start in LIVE (interactive) mode."
+    echo "All log messages will be shown in the command shell."
+    echo "You can interact with the node if you know how to use it."
+    echo "Please be extremely cautious with your actions,a"
+    echo "and exit immediately if you are not completely sure."
+    echo ""
+    echo "To exit this LIVE mode and stop node, press:"
+    echo "  q().  and press the Enter key"
+    echo ""
+    echo "--------------------------------------------------------------------"
+	echo "$ERL $NAME $ERLANG_NODE -pa $EBINS $BOOT $START_OTHER -s ${RUNAPP} $ERLANG_OPTS"
+    echo "Press any key to continue"
+    read foo
+    $ERL \
+      $NAME $ERLANG_NODE \
+      -pa $EBINS \
+	  $BOOT \
+	  $START_OTHER \
+      -s ${RUNAPP} \
+      $ERLANG_OPTS 
+}
+
+#start view log
+viewlog() 
+{
+    echo "--------------------------------------------------------------------"
+	echo "You can view the server log"
+	$ERL \
+	  $BOOT \
+	  -config log -s rb
+}
+
+monitor()
+{
+	echo "--------------------------------------------------------------------"
+	$ETOP -setcookie $COOKIE -node $ERLANG_NODE -interval 3 -tracing off
+}
+
+ping() 
+{
+	PID=`ps -ef |grep "$ROOTDIR.*$ERLANG_NODE" | grep -v grep |awk '{print $2}'`
+	if [ $PID ] 
+	then  
+		echo "Server node is running! pid -- $PID, node -- $ERLANG_NODE"
+		#echo -e "\033[32;49;1m OK!Server node stopped! pid=$PID \033[39;49;0m"
+	else 
+		echo "Server node is stopped."
+	fi
+}
+
+# display ctl usage
+usage ()
+{
+    echo ""
+    echo "appctl script Usage:"
+    echo "  start      Start an node in daemon mode"
+	echo "  stop       Stop the server node"
+	echo "  restart    Restart the server node"
+	echo "  ping       Check if the server node is running"
+    echo "  debug      Attach an interactive Erlang shell to a running node"
+    echo "  live       Start an node in live (interactive) mode"
+	echo "  viewlog    View the server logs"
+	echo "  monitor    Monitor the server process info"
+    echo ""
+    echo "Optional parameters when starting an node:"
+    echo "  --logs dir         Directory for logs:      $LOGS_DIR"
+    echo "  --node nodename    node name:               $ERLANG_NODE"
+    echo ""
+}
+
+case $ARGS in
+    ' start') start;;
+	' stop') stop;;
+	' restart') restart;;
+    ' debug') debug;;
+    ' live') live;;
+    ' viewlog') viewlog;;
+    ' monitor') monitor;;
+	' ping') ping;;
+	*) usage;;
+esac
