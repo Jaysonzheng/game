@@ -9,12 +9,18 @@
 			maxconn			% max connect
 			}).	
 
--record(player_data, {
+-record(player_data, {		% 玩家核心数据
 		money = 0, 
 		exp = 0, 
 		win_times = 0, 
 		lose_times = 0
 		}).
+
+-record(player_game_data, { % 用户玩牌时候数据
+		hand_cards = [],	% 手上剩余牌
+		is_ai = false,		% 是否机器人	
+		out_times = 0		% 出牌次数
+	}).
 
 -record(player, {
 			id,				% user Id
@@ -26,7 +32,8 @@
 		    game = none,	% game pid
 			seatid = -1,	% seat id
 			userinfo = "",	% user info
-			core = #player_data{} %core data, save in db
+			core = #player_data{}， % core data, save in db
+			game_data = #player_game_data{} % game process data
 			}).
 
 -record(roominfo,{

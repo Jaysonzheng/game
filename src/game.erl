@@ -18,6 +18,8 @@
 -include("common.hrl").
 -include("protocol.hrl").
 
+-define(HAND_CARD_COUNT, 17).
+
 -record(game_conf, {
 	base_chips = 0,
 	require_chips = 0,
@@ -26,12 +28,27 @@
 }).
 
 -record(game_state , {
-	spring = 1,
-	bomb_times = 0,
-	user_list = [],
-	cur_landtimes = 0,
-	conf = #game_conf{}
+	conf = #game_conf{},			% 游戏配置
+	user_list = [],					% 用户列表
+	spring = 1,						% 是否春天局
+	bomb_times = 0,					% 炸弹倍数
+	cur_landtimes = 0,				% 当前叫地主的倍数
+	turn_winner = 0,				% 当前回合的赢家
+	turn_cards = [],				% 当前回合扑克牌
+	cur_outcard_user = 0			% 当前出牌玩家
+	landlord_user = 0,				% 地主
+	backcards = [],					% 底牌
+
+	hand_cards = [[],[],[]],		% 手上剩余牌
+	is_ai = [false, false, false],	% 是否机器人	
+	out_times = [0, 0, 0]			% 出牌次数
 }).
+
+-record(player_game_data, { % 用户玩牌时候数据
+		hand_cards = [],	% 手上剩余牌
+		is_ai = false,		% 是否机器人	
+		out_times = 0		% 出牌次数
+	}).
 
 start_link(RoomId) ->
 	RId = erlang:integer_to_list(RoomId),
@@ -64,6 +81,12 @@ leave_room(User,RoomId)->
 		OutCardTime = #game_conf.outcard_time,
 		Data = protocol:build_packet(?SERVER_CMD_BC_WAIT_START, <<CallLandlordTime:?SHORT, OutCardTime:?SHORT>>),
 		bc_user_packet(NewUserList, Data),
+		
+		{Cards1, Cards2, Cards3, BackCard} = deal_card(?HAND_CARD_COUNT),
+		User1 = lists:nth(1, NewUserList),
+		User2 = lists:nth(2, NewUserList),
+		User3 = lists:nth(3, NewUserList),
+		
 
 		{next_state, 'WAIT_START', NewState, 2000};
 	true ->
@@ -76,7 +99,6 @@ leave_room(User,RoomId)->
 	{next_state, 'STOP_GAME', NewState};
 'STOP_GAME'(_Other, State) ->
 	{next_state, 'STOP_GAME', State}.
-
 
 cards() ->
 [
@@ -105,8 +127,7 @@ deal_card(Count) ->
 	{Cards3, BackCard} = lists:split(Count, R2),	
 	{Cards1, Cards2, Cards3, BackCard}.
 
-bc_user_packet([], _Packet)->
-	ok;
+bc_user_packet([], _Packet) -> ok;
 bc_user_packet([User | Rest], Packet) ->
 	chatserver:send_packet(User#player.socket, Packet),
 	bc_user_packet(Rest, Packet).
