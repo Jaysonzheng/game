@@ -67,10 +67,85 @@ sort_card(Cards) ->
 
 
 is_bomb(Cards) ->
-	
+	length(Cards) =:= 4 andalso 
+	card_logic_value(lists:nth(1, Cards)) =:= card_logic_value(lists:nth(2, Cards)) andalso
+	card_logic_value(lists:nth(1, Cards)) =:= card_logic_value(lists:nth(3, Cards)) andalso
+	card_logic_value(lists:nth(1, Cards)) =:= card_logic_value(lists:nth(4, Cards)).
+
+is_missile(Cards) ->
+	length(Cards) =:= 2 andalso
+	lists:nth(1, Cards) =:= 16#4F andalso 
+	lists:nth(2, Cards) =:= 16#4E.
+
+%% 3带1判断
+is_three_take_single(Cards) ->
+	[Card1, Card2, Card3, Card4] = Cards, 
+	V1 = card_logic_value(Card1),
+	V2 = card_logic_value(Card2),
+	V3 = card_logic_value(Card3),
+	V4 = card_logic_value(Card4),
+	(V1 =:= V2 andalso V1 =:= V3) orelse (V2 =:= V3 andalso V2 =:= V4).
+
+%% 3带2判断
+is_three_take_double(Cards) ->
+	[Card1, Card2, Card3, Card4, Card5] = Cards, 
+	V1 = card_logic_value(Card1),
+	V2 = card_logic_value(Card2),
+	V3 = card_logic_value(Card3),
+	V4 = card_logic_value(Card4),
+	V5 = card_logic_value(Card5),
+	(V1 =:= V2 andalso V1 =:= V3 andalso V4 =:= V5) orelse (V1 =:= V2 andalso V3 =:= V4 andalso V3 =:= V5).
+		
+%% 单连判断
+is_single_line([E|R]) ->
+	Value = card_logic_value(E),
+	if Value =:= 2 ->	%% 2不能在单联中
+		false;
+	true ->
+		check_line(single, -1, R)
+	end.
+
+%% 连对判断
+is_double_line(Cards) when length(Cards) rem 2 /= 0 ->	false;
+is_double_line(Cards) when length(Cards) rem 2 =:= 0 ->
+	check_line(double, -1, Cards).
+
+check_line(CheckType, Value, []) -> true;
+check_line(CheckType, Value, Cards) when CheckType == single ->
+	[E|R] = Cards,
+	Value2 = card_logic_value(E),
+	%% ?DEBUG("check_line, val = ~p, val2 = ~p~n", [Value, Value2]),
+	if Value =:= Value2 + 1 orelse Value =:= -1 ->
+		check_line(CheckType, Value2, R);
+	true ->
+		false
+	end;
+check_line(CheckType, Value, Cards) when CheckType =:= double ->
+	[E1, E2 | R] = Cards,
+	V1 = card_logic_value(E1), 
+	V2 = card_logic_value(E2),
+	if V1 =:= V2 andalso
+		(Value =:= V1 + 1 orelse Value =:= -1) ->
+		check_line(CheckType, V1, R);
+	true ->
+		false
+	end;
+check_line(CheckType, Value, Cards) when CheckType =:= three ->
+	ok.
+
+is_three_line(Cards) ->
+	if length(Cards) rem 3 /= 0 ->
+		false;
+	true ->
+		true
+		
+	end.
+
 
 %% module test
 test() ->
 	C = sort_card(shuffle(cards())),
-	?DEBUG("after sort, poker :~w~n", [C]).
+	V = is_single_line([16#31, 16#2D, 16#3C, 16#2B, 16#19]),
+	V2 = is_double_line([16#2d, 16#1d, 16#2c, 16#1c, 16#2a, 16#1a]),
+	?DEBUG("after sort, poker :~w~n", [V2]).
 
