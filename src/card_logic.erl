@@ -66,7 +66,8 @@ sort_card(Cards) ->
 	lists:sort(F, Cards).
 
 
-
+is_bomb(Cards) ->
+	
 
 %% module test
 test() ->
