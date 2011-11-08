@@ -2,7 +2,7 @@
 %% Created: 2010-1-3
 %% Description: define protocol cmd 
 
--define(PACKET_VERSION, 2).
+-define(PACKET_VERSION, 1).
 
 -define(SERVER_CMD_SYNC, 			16#001).	%%服务端心跳检测包			
 -define(CLIENT_CMD_SYNC, 			16#002).	%%客户端心跳回应包
@@ -32,8 +32,9 @@
 -define(SERVER_CMD_JOIN_GAME_FAILED,  16#2002).
 -define(SERVER_CMD_BC_WAIT_START,	  16#2003).
 -define(SERVER_CMD_DEAL_CARD,		  16#2004).
+-define(SERVER_CMD_BC_CALL_LANDLORD,  16#2005).
 
--define(DWORD, 32/unsigned-integer).
--define(LONG,  32/signed-integer).
--define(SHORT, 16/signed-integer).
+-define(DWORD, 32/unsigned-little-integer).
+-define(LONG,  32/signed-little-integer).
+-define(SHORT, 16/signed-little-integer).
 -define(BYTE,  8/unsigned-integer).

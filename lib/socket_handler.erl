@@ -183,8 +183,8 @@ recv_data({data, Data}, #state{socket=Socket, server = Server} = State) ->
 	%%io:format("read short val = ~p~n", [Val]),
 	Server:handle_read(Socket, DeBody),
 
-	Enstr = base64:encode_to_string("hello"),
-	gen_tcp:send(Socket, [0] ++ Enstr ++ [255]),
+	%% Enstr = base64:encode_to_string("hello"),
+	%% gen_tcp:send(Socket, [0] ++ Enstr ++ [255]),
 	{next_state, 'WAIT_FOR_DATA', State}.
 
 handshake({data, Data}, #state{socket=Socket, server = Server} = State) ->

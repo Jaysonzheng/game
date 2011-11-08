@@ -10,10 +10,10 @@
 			}).	
 
 -record(player_data, {		% 玩家核心数据
-		money = 0, 
-		exp = 0, 
-		win_times = 0, 
-		lose_times = 0
+		money = 0,			% money	 
+		exp = 0,			% 经验值
+		win_times = 0,		% 赢次数
+		lose_times = 0		% 输次数
 		}).
 
 -record(player_game_data, { % 用户玩牌时候数据
@@ -31,8 +31,8 @@
 			time = none,	% active time
 		    game = none,	% game pid
 			seatid = -1,	% seat id
-			userinfo = "",	% user info
-			core = #player_data{}， % core data, save in db
+			userinfo = "user",	% user info
+			core = #player_data{}, % core data, save in db
 			game_data = #player_game_data{} % game process data
 			}).
 
@@ -50,6 +50,12 @@
 
 -define(D(Format, Args), io:format(Format, Args)).
 -define(DD(Format), io:format(Format)).
+
+-ifdef(NDEBUG).
+-define(DEBUG(F, D), ok).
+-else.
+-define(DEBUG(F, D), io:format("[~p:~p]----"++F, [?MODULE, ?LINE]++D)).
+-endif.
 
 -define(GAME_ROOM_DB, game_room_db).
 -define(GAME_ROOM_ID_DB, game_room_id_db).

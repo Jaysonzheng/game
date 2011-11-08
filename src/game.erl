@@ -10,6 +10,8 @@
 -export([init/1, handle_event/3,
 	 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 
+-export([join_room/2, leave_room/2]).
+
 -export([
     'WAIT_START'/2,    	%% wait for game start
 	'STOP_GAME'/2      	%% stop game
@@ -35,7 +37,7 @@
 	cur_landtimes = 0,				% 当前叫地主的倍数
 	turn_winner = 0,				% 当前回合的赢家
 	turn_cards = [],				% 当前回合扑克牌
-	cur_outcard_user = 0			% 当前出牌玩家
+	cur_outcard_user = 0,			% 当前出牌玩家
 	landlord_user = 0,				% 地主
 	backcards = [],					% 底牌
 
@@ -43,12 +45,6 @@
 	is_ai = [false, false, false],	% 是否机器人	
 	out_times = [0, 0, 0]			% 出牌次数
 }).
-
--record(player_game_data, { % 用户玩牌时候数据
-		hand_cards = [],	% 手上剩余牌
-		is_ai = false,		% 是否机器人	
-		out_times = 0		% 出牌次数
-	}).
 
 start_link(RoomId) ->
 	RId = erlang:integer_to_list(RoomId),
@@ -59,84 +55,83 @@ start_link(RoomId) ->
 init([]) ->
     {ok, 'STOP_GAME', #game_state{}}.
 
-join_room(User, RoomId) ->
-	Pid = game_room_db:get_game_room_by_roomid(RoomId),
-	gen_fsm:send_event(Pid, {join_room, User}).
+join_room(User, PId) ->
+	gen_fsm:send_event(PId, {join_room, User, PId}).
 
-leave_room(User,RoomId)->
-	Pid = game_room_db:get_game_room_by_roomid(RoomId),
-	gen_fsm:send_event(Pid, {leave_room, User}).
+leave_room(User,PId)->
+	gen_fsm:send_event(PId, {leave_room, User}).
 
 'WAIT_START'(_Other, State) ->
 	{next_state, 'WAIT_START', State}.
 
-'STOP_GAME'({join_room, User}, State) ->
-	#game_state{user_list = UserList} = State, 
-	NewUserList = UserList ++ [User],
-	NewState = State#game_state{user_list = NewUserList},
-	
+'STOP_GAME'({join_room, User, PId}, State) ->
+	?D("Somebody come in!~p~n", [User]),
+	chatets:set_user_gamepid(User, PId),
+	#game_state{user_list = UserList, conf = GameConf} = State, 
+	NewUserList = UserList ++ [User],	
 	if length(NewUserList) =:= 3 ->		%%凑够三个人，准备开始游戏
-		?DD("ready start game"),
-		CallLandlordTime = #game_conf.landlord_time,
-		OutCardTime = #game_conf.outcard_time,
-		Data = protocol:build_packet(?SERVER_CMD_BC_WAIT_START, <<CallLandlordTime:?SHORT, OutCardTime:?SHORT>>),
-		bc_user_packet(NewUserList, Data),
-		
-		{Cards1, Cards2, Cards3, BackCard} = deal_card(?HAND_CARD_COUNT),
+		%% ?DD("ready start game~n"),
+		%%准备开始
 		User1 = lists:nth(1, NewUserList),
 		User2 = lists:nth(2, NewUserList),
 		User3 = lists:nth(3, NewUserList),
+		bc_user_wait_start(GameConf, User1, User2, User3),
+
+		%% 发牌
+		{Cards1, Cards2, Cards3, BackCard} = card_logic:deal_card(?HAND_CARD_COUNT),
+		NewState = State#game_state{user_list = NewUserList, 
+									backcards = BackCard, 
+									hand_cards = [Cards1, Cards2, Cards3]
+								},
+		send_player_cards(User1, Cards1),
+		send_player_cards(User2, Cards2),
+		send_player_cards(User3, Cards3),
 		
 
 		{next_state, 'WAIT_START', NewState, 2000};
 	true ->
+		NewState = State#game_state{user_list = NewUserList},
 		{next_state, 'STOP_GAME', NewState}
 	end;
 'STOP_GAME'({leave_room, User}, State) ->
 	#game_state{user_list = UserList} = State, 
 	NewUserList = UserList -- [User],
 	NewState = State#game_state{user_list = NewUserList},
+	chatets:set_user_gamepid(User, none),
 	{next_state, 'STOP_GAME', NewState};
 'STOP_GAME'(_Other, State) ->
 	{next_state, 'STOP_GAME', State}.
 
-cards() ->
-[
-	16#01,16#02,16#03,16#04,16#05,16#06,16#07,16#08,16#09,16#0A,16#0B,16#0C,16#0D,	%%方块 A - K (14,15,3,4,5,...13)
-	16#11,16#12,16#13,16#14,16#15,16#16,16#17,16#18,16#19,16#1A,16#1B,16#1C,16#1D,	%%梅花 A - K (14,15,3,4,5,...13)
-	16#21,16#22,16#23,16#24,16#25,16#26,16#27,16#28,16#29,16#2A,16#2B,16#2C,16#2D,	%%红桃 A - K (14,15,3,4,5,...13)
-	16#31,16#32,16#33,16#34,16#35,16#36,16#37,16#38,16#39,16#3A,16#3B,16#3C,16#3D,	%%黑桃 A - K (14,15,3,4,5,...13)
-	16#4E,16#4F
-].
+bc_user_wait_start(GameConf, User1, User2, User3) ->
+	CallLandlordTime = GameConf#game_conf.landlord_time,
+	OutCardTime = GameConf#game_conf.outcard_time,
 
-shuffle(Cards) ->
-    Temp = lists:map(fun(X) ->
-			     {random:uniform(1 bsl 64), X}
-		     end,
-		     Cards),
-    Temp1 = lists:keysort(1, Temp),
-    lists:map(fun(X) ->
-		      element(2, X)
-	      end,
-	      Temp1).
-  
-deal_card(Count) ->
-	Cards = shuffle(cards()),
-	{Cards1, R1} = lists:split(Count, Cards),	
-	{Cards2, R2} = lists:split(Count, R1),	
-	{Cards3, BackCard} = lists:split(Count, R2),	
-	{Cards1, Cards2, Cards3, BackCard}.
+	Money1 = (User1#player.core)#player_data.money, 
+	Money2 = (User2#player.core)#player_data.money, 
+	Money3 = (User3#player.core)#player_data.money, 
+	Bin1 = protocol:write_string(<<>>, User1#player.userinfo),
+	Bin2 = protocol:write_string(Bin1, User2#player.userinfo),
+	Bin3 = protocol:write_string(Bin2, User3#player.userinfo),
+	Bin = <<CallLandlordTime:?SHORT, OutCardTime:?SHORT, Money1:?LONG, Money2:?LONG, Money3:?LONG, Bin3/binary>>, 
+	Packet = protocol:build_packet(?SERVER_CMD_BC_WAIT_START, Bin), 
+	bc_user_packet([User1, User2, User3], Packet),
+	ok.
 
 bc_user_packet([], _Packet) -> ok;
 bc_user_packet([User | Rest], Packet) ->
-	chatserver:send_packet(User#player.socket, Packet),
+	imserver:send_packet(User#player.socket, Packet),
 	bc_user_packet(Rest, Packet).
+
+send_player_cards(User, Cards) ->
+	Bin = protocol:write_byte_list(<<>>, Cards),
+	Packet = protocol:build_packet(?SERVER_CMD_DEAL_CARD, Bin), 
+	imserver:send_packet(User#player.socket, Packet).
 
 %% gen_fsm template 
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
-handle_sync_event(Event, From, StateName, State) ->
+handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
 

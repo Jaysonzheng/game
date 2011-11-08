@@ -6,7 +6,7 @@
 -include("common.hrl").
 -include("protocol.hrl").
 
--export([init/0, start/0, handle_accept/1, handle_read/2, handle_close/1, get_room_conf/1]).
+-export([init/0, start/0, handle_accept/1, handle_read/2, handle_close/1, get_room_conf/1, send_packet/2]).
 
 
 %% {ok,Server}=reltool:start_server([{config,"chat.config"}]). 
@@ -21,7 +21,8 @@ start() ->
 	tcp_server_app:start(imserver).
 
 init() ->
-	chatets:init().
+	chatets:init(), 
+	game_room_db:init().
 
 handle_accept(_Sock) ->
 	io:format("handle accept\n"),
@@ -73,7 +74,7 @@ parse_cmd(Sock, Data, CmdType, Body) ->
 		{?CLIENT_CMD_JOIN_GAME, Level} -> user_join_game(Sock, Level);
 		
 		_ -> 
-			error_logger:error_msg("unkown cmd type~n"),
+			error_logger:error_msg("unkown cmd type:0x~.16B~n", [CmdType]),
 			cmd_error
 	end.	
 
@@ -103,12 +104,20 @@ user_login(Sock, UserId, IsOnline, FriendIdList) ->
 %% 用户注销
 user_logout(Sock) ->
 %% 	gen_server:cast(?MODULE, {connect_close, self()}),
-	case chatets:get_uid_by_sock(Sock) of
-		{ok,UserId} -> 
+	case chatets:get_user_by_sock(Sock) of
+%%	case chatets:get_uid_by_sock(Sock) of
+		{ok,User} -> 
+			#player{id = UserId, game = PId} = User,
 			Body = <<UserId:?DWORD>>,
 			Data = protocol:build_packet(?SERVER_BC_USER_LOGOUT, Body),
 			broadcast_friends(UserId, Data),
-			chatets:del_user(Sock);
+			
+			chatets:del_user(Sock),
+			if PId =:= none ->
+				game:leave_room(PId);
+			true ->
+				ok
+			end;
 		{error, not_found} ->
 			ok
 	end.
@@ -171,19 +180,19 @@ user_join_game(Sock, Level) ->
 			#player{core = Core} = User,
 			#player_data{money = Money} = Core,
 			if Require > Money ->
+				?D("user join game ~p, Require:~p, ~p:Money ~n", [Level, Require, Money]),
 				Err_not_enough_money = 1,
 				Body = <<Err_not_enough_money:?SHORT>>,
-				Data = protocol:build_packet(<<?SERVER_CMD_JOIN_GAME_FAILED:?SHORT, Body>>),
-				send_packet(Sock, Data),
-				not_enough_money;
+				Data = protocol:build_packet(?SERVER_CMD_JOIN_GAME_FAILED, Body),
+				send_packet(Sock, Data);
 			true ->
 				case game_room_db:get_game_room(Level) of
 				{ok, RoomId, PId} ->
-					game:join_room(User, RoomId);
+					game:join_room(User, PId);
 				{error, _Reason} ->
 					Err_not_find_room = 2,
 					Body = <<Err_not_find_room:?SHORT>>,
-					Data = protocol:build_packet(<<?SERVER_CMD_JOIN_GAME_FAILED:?SHORT, Body>>),
+					Data = protocol:build_packet(<<?SERVER_CMD_JOIN_GAME_FAILED:?SHORT, Body/binary>>),
 					send_packet(Sock, Data)
 				end
 			end;
@@ -224,16 +233,17 @@ get_online_show_friend_id_list(UserId) ->
 	[Id || {_Player, Id, _Socket, _Friends, _Status, _RoomId, _Time}<-FriendList]. %%取出好友id列表做返回值
 
 send_login_success(Sock, FriendList) ->
-	OnlineFriendCount = length(FriendList),			%回应用户登录成功,并返回在线好友Id列表
-	Bin = <<OnlineFriendCount:?LONG>>,
-	RetPacket = protocol:write_int_binary(Bin, FriendList),
-	%%io:format("FriendList = ~w, RetPacket = ~w ,OnlineFriendCount = ~w~n", [FriendList, RetPacket, OnlineFriendCount]),
+	%回应用户登录成功,并返回在线好友Id列表
+	RetPacket = protocol:write_int_list(<<>>, FriendList),
+	%% io:format("FriendList = ~w, RetPacket = ~w ,OnlineFriendCount = ~w~n", [FriendList, RetPacket, OnlineFriendCount]),
 	RetData = protocol:build_packet(?SERVER_CMD_LOGINSUCCESS, RetPacket),
 	send_packet(Sock, RetData).		%echo the new user login success
 
 send_packet(Socket, Packet) ->
-%%	gen_tcp:send(Sock, Packet).
-	case catch gen_tcp:send(Socket, Packet) of
+%%  base64 encode, then wrap packet begin with 0x00 and end with 0xff before sending packet
+	EncodePacket = base64:encode(Packet),		
+	Data = <<0:?BYTE, EncodePacket/binary, 255:?BYTE>>,
+	case catch gen_tcp:send(Socket, Data) of
         ok ->
             ok;
         {error, closed} ->
@@ -252,21 +262,21 @@ send_packet(Socket, Packet) ->
                                       ])
     end.
 
-get_room_conf(BaseChip) ->
+get_room_conf(Level) ->
 	%% level, basechip, require money, expand, outcard_time
 	RoomConf = [
 		{level, basechip, require_money, expand, outcard_time},
-		{1, 20,  200,   10, 30},
+		{1, 20,  0,   10, 30},
 		{2, 50,  1000,  10, 20},
 		{3, 100, 5000,  10, 20},
 		{4, 200, 10000, 10, 20}
 	],
-	get_room_conf(BaseChip, RoomConf).
+	get_room_conf(Level, RoomConf).
 
-get_room_conf(BaseChip, [{Level, Base, Require, Expand, OutTime} | R]) when Base =:= BaseChip ->
+get_room_conf(PLevel, [{Level, Base, Require, Expand, OutTime} | R]) when PLevel =:= Level ->
 	{Level, Base, Require, Expand, OutTime};
-get_room_conf(BaseChip, [{Level, Base, Require, Expand, OutTime} | R]) when Base /= BaseChip ->
-	get_room_conf(BaseChip, R);
-get_room_conf(BaseChip, RoomConf) when RoomConf =:= [] ->
+get_room_conf(PLevel, [{Level, Base, Require, Expand, OutTime} | R]) when PLevel /= Level ->
+	get_room_conf(PLevel, R);
+get_room_conf(PLevel, RoomConf) when RoomConf =:= [] ->
 	DefaultConf = {1, 20,  200, 10, 30}.
 

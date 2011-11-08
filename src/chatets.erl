@@ -29,7 +29,10 @@
 	     get_all_user_count/0,
 		 user_enter_room/2, 
 		 user_leave_room/1,
-		 user_set_status/2
+		 user_set_status/2,
+ 		 set_user_gamepid/2, 
+		 get_user_gamepid/1
+
 	 ]).
 
 
@@ -70,8 +73,8 @@ add_user(UserId, Socket, Status, FriendList) ->
 %% use disconnect, delete user 
 del_user(Socket) ->
 	case ets:match_object(?TABLE, #player{socket = Socket, _ = '_'}) of 
-		[{player, Id, _Socket, _Friends, _Status, _Roomid, _Time, _Ip}] -> 
-			ets:delete(?TABLE, Id),
+		[User] ->
+			ets:delete(?TABLE, User#player.id),
  	   		ok;	
 		
 		[] -> 
@@ -189,6 +192,31 @@ user_set_status(Sock, Status) ->
 			},
 			ets:insert(?TABLE,NewUser),			
  	   		ok;	
+		[] -> 
+			{error, not_found}
+	end.
+
+%%player update game server handle
+set_user_gamepid(User, GamePid) ->
+	case ets:match_object(?TABLE, User) of 
+		[User] -> 
+			NewUser = User#player{
+				game = GamePid,
+				time = time()
+			},
+			?DEBUG("GamePid:~p\n", [GamePid]),
+			ets:insert(?TABLE,NewUser),			
+ 	   		ok;	
+		[] -> 
+			{error, not_found}
+	end.
+
+%%get user gameserver pid by userid
+get_user_gamepid(Sock) ->   
+	case ets:match_object(?TABLE, #player{socket = Sock, _ = '_'}) of 
+		[User] -> 
+			#player{game = GamePid, id = UserId} = User,
+			{ok, User, GamePid};	
 		[] -> 
 			{error, not_found}
 	end.

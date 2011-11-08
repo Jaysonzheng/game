@@ -11,7 +11,7 @@
 -export([read_string/1,read_int/1, read_uint/1, read_short/1, read_byte/1, read_binary/1, read_int_list/2]).
 -export([write_string/2, write_short/2, write_int/2, write_uint/2, write_byte/2, write_binary/3]).
 -export([parse_header/1, build_packet/1, build_packet/2]).
--export([write_int_binary/2]).
+-export([write_int_list/2, write_byte_list/2]).
  
 %%
 %% API Functions
@@ -26,6 +26,7 @@
 parse_header(Bin) ->
 	<<Version:?BYTE, CmdType:?SHORT, Body/binary>> = Bin,
 	%%io:format("Iden1:~w,Iden2:~w, Version:~w~n",[Iden1, Iden2, Version]),
+	io:format("Version = ~p, PacketVersion = ~p~n", [Version, ?PACKET_VERSION]),
 	if 
 		Version /= ?PACKET_VERSION -> {error,version};
 		true -> {ok, CmdType, Body}
@@ -84,9 +85,9 @@ build_packet(CmdType) ->
 	build_packet(CmdType,<<>>).
 
 build_packet(CmdType, Body) ->
-	Header = <<$B:?BYTE, $Y:?BYTE, ?PACKET_VERSION:?BYTE, CmdType:?SHORT>>,
-	EncodeBody = encode_data(Body, []),
-	Packet = list_to_binary([Header | EncodeBody]),
+	Packet = <<?PACKET_VERSION:?BYTE, CmdType:?SHORT, Body/binary>>,
+	%%EncodeBody = encode_data(Body, []),
+	%%Packet = list_to_binary([Header | EncodeBody]),
 	Packet.
 	
 read_int_list(<<>>, List) -> List;
@@ -94,10 +95,25 @@ read_int_list(<<Elem:?LONG, Bin/binary>>, List) ->
 	NewList = [Elem | List],
 	read_int_list(Bin, NewList).
 
+write_int_list(Bin, List) ->
+	Len = length(List),
+	NewBin = <<Bin/binary, Len:?LONG>>,
+	write_int_binary(NewBin, List).
+
 write_int_binary(Bin, []) -> Bin;
 write_int_binary(Bin, [Elem | List]) ->	
 	NewBin = <<Bin/binary, Elem:?LONG>>,
 	write_int_binary(NewBin, List).
+
+write_byte_list(Bin, List)->
+	Len = length(List),
+	NewBin = <<Bin/binary, Len:?LONG>>,
+	write_byte_binary(NewBin, List).
+
+write_byte_binary(Bin, []) -> Bin;
+write_byte_binary(Bin, [Elem | List]) ->
+	NewBin = <<Bin/binary, Elem:?BYTE>>,
+	write_byte_binary(NewBin, List).
 
 encode_data(<<>>, List) -> 
 	NewList = lists:reverse(List),
