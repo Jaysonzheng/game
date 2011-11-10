@@ -88,13 +88,15 @@ get_card_type(Cards) ->
 	6 ->
 		check_card_type(Cards, [fun is_single_line/1, fun is_double_line/1, fun is_three_line/1, fun is_four_take_single/1]);
 	8 ->
-		check_card_type(Cards, [fun is_single_line/1, fun is_double_line/1, fun is_four_take_double/1]);
+		check_card_type(Cards, [fun is_single_line/1, 
+								fun is_double_line/1,
+								fun is_four_take_double/1, 
+								fun is_three_line_take_x/1]);
 	_ ->
 		check_card_type(Cards, [fun is_single_line/1, 
 								fun is_double_line/1, 
 								fun is_three_line/1,
-								fun is_three_line_take_x/1, 
-								fun is_four_line_take_x/1
+								fun is_three_line_take_x/1
 								])
 	end.
 
@@ -102,11 +104,11 @@ get_card_type(Cards) ->
 %%
 check_card_type(Cards, []) -> false;
 check_card_type(Cards, [Guard|Rest]) ->
-	case Guard(Cards) of 
-	{true, CardType}->
-		CardType;
-	_ ->
-		check_card_type(Cards, Rest)
+	CardType = Guard(Cards), 	
+	if CardType == false ->
+		check_card_type(Cards, Rest);
+	true ->
+		CardType
 	end.
 
 is_single(Cards) ->	card_logic_value(Cards) /= -1.
@@ -114,7 +116,7 @@ is_single(Cards) ->	card_logic_value(Cards) /= -1.
 is_double(Cards) -> case length(Cards) =:= 2 andalso 
 	card_logic_value(lists:nth(1, Cards)) == card_logic_value(lists:nth(2, Cards)) of 
 	true ->
-		{true, type_double};
+		type_double;
 	false ->
 		false
 	end.
@@ -123,7 +125,7 @@ is_missile(Cards) ->
 	case length(Cards) =:= 2 andalso
 		lists:nth(1, Cards) =:= 16#4F andalso 
 		lists:nth(2, Cards) =:= 16#4E of
-	true -> {true, type_missile};
+	true -> type_missile;
 	false -> false
 	end.
 
@@ -131,7 +133,7 @@ is_three(Cards) ->
 	case length(Cards) =:= 3 andalso 
 		card_logic_value(lists:nth(1, Cards)) == card_logic_value(lists:nth(2, Cards)) andalso
 		card_logic_value(lists:nth(1, Cards)) == card_logic_value(lists:nth(3, Cards)) of 
-	true -> {true, type_three};
+	true -> type_three;
 	false -> false
 	end.
 
@@ -140,7 +142,7 @@ is_bomb(Cards) ->
 		card_logic_value(lists:nth(1, Cards)) =:= card_logic_value(lists:nth(2, Cards)) andalso
 		card_logic_value(lists:nth(1, Cards)) =:= card_logic_value(lists:nth(3, Cards)) andalso
 		card_logic_value(lists:nth(1, Cards)) =:= card_logic_value(lists:nth(4, Cards)) of 
-	true -> {true, type_bomb};
+	true -> type_bomb;
 	false -> false
 	end.
 
@@ -152,7 +154,7 @@ is_three_take_single(Cards) ->
 	V3 = card_logic_value(Card3),
 	V4 = card_logic_value(Card4),
 	case (V1 =:= V2 andalso V1 =:= V3) orelse (V2 =:= V3 andalso V2 =:= V4) of
-	true -> {true, type_three_take_single};
+	true -> type_three_take_single;
 	false -> false
 	end.
 
@@ -166,7 +168,7 @@ is_three_take_double(Cards) ->
 	V4 = card_logic_value(Card4),
 	V5 = card_logic_value(Card5),
 	case (V1 =:= V2 andalso V1 =:= V3 andalso V4 =:= V5) orelse (V1 =:= V2 andalso V3 =:= V4 andalso V3 =:= V5) of
-	true -> {true, type_three_take_double};
+	true -> type_three_take_double;
 	false -> false
 	end.
 
@@ -183,7 +185,7 @@ is_four_take_single(Cards) ->
 	case (V1 =:= V2 andalso V1 =:= V3 andalso V1 =:= V4) orelse
 		(V2 =:= V3 andalso V2 =:= V4 andalso V2 =:= V5) orelse
 		(V3 =:= V4 andalso V3 =:= V5 andalso V3 =:= V6) of 
-	true -> {true, type_four_take_single};
+	true -> type_four_take_single;
 	false -> false
 	end.
 
@@ -202,21 +204,23 @@ is_four_take_double(Cards) ->
 	case (V1 =:= V2 andalso V1 =:= V3 andalso V1 =:= V4 andalso V5 =:= V6 andalso V7 =:= V8) orelse
 		(V3 =:= V4 andalso V3 =:= V5 andalso V3 =:= V6 andalso V1 =:= V2 andalso V7 =:= V8) orelse
 		(V5 =:= V6 andalso V5 =:= V7 andalso V5 =:= V8 andalso V1 =:= V2 andalso V3 =:= V4) of
-	true -> {true, type_four_take_double};
+	true -> type_four_take_double;
 	false -> false
 	end.
 
 %% 单连判断
-is_single_line([E|R]) ->
+is_single_line(Cards) when length(Cards) < 2 -> false;
+is_single_line(Cards) when length(Cards) >= 2 ->
+	[E|R] = Cards,
 	Value = card_logic_value(E),
 	if Value =:= 15 ->	%% 2不能在单联中
 		false;
 	true ->
-		check_line(single_line, -1, [E|R])
+		check_line(single_line, -1, Cards)
 	end.
 
 %% 连对判断
-is_double_line(Cards) when length(Cards) rem 2 /= 0 ->	false;
+is_double_line(Cards) when length(Cards) == 0 orelse length(Cards) rem 2 /= 0 -> false;
 is_double_line(Cards) when length(Cards) rem 2 =:= 0 ->
 	[E|R] = Cards,
 	Value = card_logic_value(E),
@@ -227,6 +231,7 @@ is_double_line(Cards) when length(Cards) rem 2 =:= 0 ->
 	end.
 
 %% 三连判断
+is_three_line(Cards) when length(Cards) < 6 orelse length(Cards) rem 3 /= 0 -> false;
 is_three_line(Cards) ->
 	[E|R] = Cards,
 	Value = card_logic_value(E),
@@ -236,7 +241,7 @@ is_three_line(Cards) ->
 		check_line(three_line, -1, Cards)
 	end.
 
-check_line(CheckType, _Value, []) -> {true, CheckType};
+check_line(CheckType, _Value, []) -> CheckType;
 check_line(CheckType, Value, Cards) when CheckType == single_line ->
 	[E|R] = Cards,
 	Value2 = card_logic_value(E),
@@ -269,15 +274,59 @@ check_line(CheckType, Value, Cards) when CheckType =:= three_line ->
 		false
 	end.
 
+count(Key, List) -> count(Key, List, 0).
+count(Key, [], Count) -> Count;
+count(Key, [E|R], Count) ->
+	%{C, _V} = E, 
+	?DEBUG("Key = ~p, E = ~p~n", [Key, E]),
+	if E == Key ->
+		count(Key, R, Count + 1);
+	true ->
+		count(Key, R, Count)
+	end.
+
+check_three_takex_line([], _Value) -> true;
+check_three_takex_line([{_Count, Value}|R], PreValue) -> 
+	if (Value =:= PreValue - 1 orelse PreValue =:= -1) ->
+		check_three_takex_line(R, Value);
+	true ->
+		false
+	end.
+
 %%3带1，3带2连判断
 is_three_line_take_x(Cards) -> 
-	?DEBUG("cards = ~p~n", [Cards]),
-	%%C = lists:usort(Cards),
-	%%C2 = Cards -- C,
-	%%?DEBUG("is_three_line_take_x:~p, ~p, ~p~n", [Cards, C, C2]),
-	ok.
-%    case is_double_line(C2) of 
-%    {true, double_line} ->
+	F = fun(Card) -> card_logic_value(Card) end, 
+	L = lists:map(F, Cards),  	
+	L2 = lists:usort(L),
+	L3 = lists:map(fun(Key) -> {count(Key, L), Key}  end, L2),
+	L4 = lists:filter(fun({Count, Key}) -> Count == 3 end, L3), 
+	%%L4 = lists:map(fun({Count, Key}) -> if Count == 3 -> Key; true -> false end end, L3), 
+
+	?DEBUG("Cards = ~w, L = ~w, L2 = ~w, L3 =~w, L4 = ~w ~n", [Cards, L, L2, L3, L4]),
+	SingleCount = count(1, L3), 
+	DoubleCount = count(2, L3), 
+	ThreeCount = count(3, L3),
+	?DEBUG("1 = ~w, 2 = ~w, 3 = ~w~n", [SingleCount, DoubleCount, ThreeCount]),
+	
+	Ret = check_three_takex_line(L4, -1),
+	if 
+		Ret == true andalso SingleCount == ThreeCount -> three_line_take_single;
+		Ret == true andalso DoubleCount == ThreeCount -> three_line_take_double;
+		true ->	false
+	end.
+%    F = fun(Card1, Card2) -> 
+%            V1 = card_logic_value(Card1),
+%            V2 = card_logic_value(Card2),
+%            V1 == V2
+%        end, 
+%    C = lists:usort(F, Cards),
+%    C2 = Cards -- C,
+%    C3 = lists:reverse(lists:usort(F, C2)),
+
+%    ?DEBUG("Cards = ~w, C = ~w, C2 = ~w, C3 = ~w~n", [Cards, C, C2, C3]),
+%    case is_single_line(C3) of 
+%    single_line ->
+%        ?DD("double line~n"),
 %        Count = length(Cards),
 %        if Count rem 4 =:= 0 ->
 %            three_line_take_single;
@@ -290,59 +339,42 @@ is_three_line_take_x(Cards) ->
 %        false
 %    end.	
 
-%4带2单，4带2对连判断
-is_four_line_take_x(Cards) -> 
-	C = lists:usort(Cards),
-	C2 = Cards -- C,
-	case is_three_line(C2) of 
-	{true, three_line} ->
-		Count = length(Cards),
-		if Count rem 6 =:= 0 ->
-			four_line_take_single;
-		Count rem 8 =:= 0 ->
-			four_line_take_double;
-		true ->
-			false
-		end;
-	false ->
-		false
-	end.	
-
 %% module test
 test() ->
-	?DEBUG("logic val = ~p~n", [card_logic_value(16#32)]),
+	%?DEBUG("logic val = ~p~n", [card_logic_value(16#32)]),
 	%?assert(is_single_line([16#32, 16#21, 16#3D, 16#2C, 16#1B]) == false),
 	%?assert(is_single_line([16#31, 16#2D, 16#3C, 16#2B, 16#1A]) == true),
 	%?assert(is_single_line([16#31, 16#2D, 16#3C, 16#2B, 16#19]) == false),
 	
 	%?assert(is_double_line([16#2d, 16#1d, 16#2c, 16#1c, 16#2b, 16#1b]) == true),
 	
-	?assert(is_three_take_single([16#03, 16#34, 16#24, 16#14]) == {true, type_three_take_single}),
-	?assert(is_three_take_single([16#34, 16#24, 16#14, 16#03]) == {true, type_three_take_single}),
-	?assert(is_three_take_single([16#34, 16#24, 16#23, 16#03]) == false),
-	
-	?assert(is_three_take_double([16#25, 16#15, 16#34, 16#24, 16#14]) == {true, type_three_take_double}),
-	?assert(is_three_take_double([16#25, 16#15, 16#35, 16#24, 16#14]) == {true, type_three_take_double}),
-	?assert(is_three_take_double([16#26, 16#15, 16#35, 16#24, 16#14]) == false),
-	
-	?assert(get_card_type([16#22, 16#32]) == type_double), 
-	?assert(get_card_type([16#4F, 16#4E]) == type_missile),
-	?assert(get_card_type([16#32, 16#22, 16#12]) == type_three),
-	
-	?assert(get_card_type([16#29, 16#28, 16#37, 16#26, 16#15, 16#14, 16#13]) == single_line),
-	?assert(get_card_type([16#2A, 16#28, 16#37, 16#26, 16#15, 16#14, 16#13]) /= single_line),
-	?assert(get_card_type([16#29, 16#28, 16#37, 16#27, 16#15, 16#14, 16#13]) /= single_line),
+%    ?assert(is_three_take_single([16#03, 16#34, 16#24, 16#14]) == type_three_take_single),
+%    ?assert(is_three_take_single([16#34, 16#24, 16#14, 16#03]) == type_three_take_single),
+%    ?assert(is_three_take_single([16#34, 16#24, 16#23, 16#03]) == false),
+%    
+%    ?assert(is_three_take_double([16#25, 16#15, 16#34, 16#24, 16#14]) == type_three_take_double),
+%    ?assert(is_three_take_double([16#25, 16#15, 16#35, 16#24, 16#14]) == type_three_take_double),
+%    ?assert(is_three_take_double([16#26, 16#15, 16#35, 16#24, 16#14]) == false),
+%    
+%    ?assert(get_card_type([16#22, 16#32]) == type_double), 
+%    ?assert(get_card_type([16#4F, 16#4E]) == type_missile),
+%    ?assert(get_card_type([16#32, 16#22, 16#12]) == type_three),
+%    
+%    ?assert(get_card_type([16#29, 16#28, 16#37, 16#26, 16#15, 16#14, 16#13]) == single_line),
+%    ?assert(get_card_type([16#2A, 16#28, 16#37, 16#26, 16#15, 16#14, 16#13]) /= single_line),
+%    ?assert(get_card_type([16#29, 16#28, 16#37, 16#27, 16#15, 16#14, 16#13]) /= single_line),
 
-	?assert(get_card_type([16#2d, 16#1d, 16#2c, 16#1c, 16#2b, 16#1b]) == double_line),
-	?assert(get_card_type([16#2d, 16#1d, 16#2c, 16#1c, 16#2b, 16#1b, 16#1a, 16#0a]) == double_line),
-	?assert(get_card_type([16#2d, 16#1d, 16#2c, 16#1c]) /= double_line),
-	
-	?assert(get_card_type([16#2d, 16#1d, 16#0d, 16#2c, 16#1c, 16#0c]) == three_line),
+%    ?assert(get_card_type([16#2d, 16#1d, 16#2c, 16#1c, 16#2b, 16#1b]) == double_line),
+%    ?assert(get_card_type([16#2d, 16#1d, 16#2c, 16#1c, 16#2b, 16#1b, 16#1a, 16#0a]) == double_line),
+%    ?assert(get_card_type([16#2d, 16#1d, 16#2c, 16#1c]) /= double_line),
+%    
+%    ?assert(get_card_type([16#2d, 16#1d, 16#0d, 16#2c, 16#1c, 16#0c]) == three_line),
 	?assert(get_card_type([16#2d, 16#1d, 16#0d, 16#2d, 16#1d, 16#0d, 16#2c, 16#1c, 16#0c]) /= three_line),
-	%?assert(get_card_type([16#2d, 16#1d, 16#0d, 16#2c, 16#1c, 16#0c, 16#23, 16#25]) == three_line_take_single),
-	
+	?assert(get_card_type([16#2d, 16#1d, 16#0d, 16#2c, 16#1c, 16#0c, 16#23, 16#25]) == three_line_take_single),
+	?assert(get_card_type([16#2d, 16#1d, 16#0d, 16#2c, 16#1c, 16#0c, 16#25, 16#15, 16#23, 16#13]) == three_line_take_double),
+
 	%Value = is_three_line_take_x([16#2d, 16#1d, 16#0d, 16#2c, 16#1c, 16#0c, 16#23, 16#25]),
-	Value = is_three_line_take_x([16#26, 16#15, 16#35, 16#24, 16#14]),
-	?DEBUG("value = ~p~n", [Value]),
+	%Value = is_four_line_take_x([16#26, 16#15, 16#35, 16#24, 16#14]),
+	%?DEBUG("value = ~p~n", [Value]),
 	eunit_test_all_pass.
 
