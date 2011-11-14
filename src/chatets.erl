@@ -30,7 +30,7 @@
 		 user_enter_room/2, 
 		 user_leave_room/1,
 		 user_set_status/2,
- 		 set_user_gamepid/2, 
+ 		 set_user_gamedata/3, 
 		 get_user_gamepid/1
 
 	 ]).
@@ -197,11 +197,12 @@ user_set_status(Sock, Status) ->
 	end.
 
 %%player update game server handle
-set_user_gamepid(User, GamePid) ->
+set_user_gamedata(User, GamePid, SeatId) ->
 	case ets:match_object(?TABLE, User) of 
 		[User] -> 
 			NewUser = User#player{
 				game = GamePid,
+				seatid = SeatId,
 				time = time()
 			},
 			?DEBUG("GamePid:~p\n", [GamePid]),
